@@ -465,7 +465,7 @@ exportPdf.addEventListener("click", () => {
   let y = 40;
 
   doc.setFontSize(14);
-  doc.text("LogicPro Natural — Hasil Proses", 40, y); 
+  doc.text("Project Matdis 2 — Hasil Logika", 40, y); 
   y += 20;
 
   doc.setFontSize(11);
@@ -500,7 +500,7 @@ exportPdf.addEventListener("click", () => {
     }
   });
 
-  doc.save("logicpro.pdf");
+  doc.save("Project Matdis 2 - Hasil Logika.pdf");
 });
 
 
