@@ -3,10 +3,7 @@
 
 <img width="100%" src="https://dummyimage.com/1200x250/1e1e2e/ffffff&text=Project+Matdis+2+-+Logic+Processor" />
 
-## 📌 Status & Deployment
-[![Netlify Status](https://api.netlify.com/api/v1/badges/00000000-0000-0000-0000-000000000000/deploy-status)](https://app.netlify.com/)  
-*(Catatan: Ganti badge dengan ID Netlify milikmu jika ingin realtime.)*
-
+## 📌 Deployment
 🔗 **Akses Aplikasi:**  
 👉 [https://projectmatdis2.netlify.app/](https://projectmatdis2.netlify.app/)
 
