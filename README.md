@@ -94,11 +94,10 @@ Sangat cocok untuk mahasiswa baru atau pengguna tanpa dasar logika kuat.
 # 📂 Struktur Proyek
 
 ```
-
 Project-Matdis2/
 │
 ├── index.html            ← Halaman utama
-├── style.css / tailwind  ← Styling modern
+├── tailwind              ← Styling modern
 ├── script.js             ← Logika utama aplikasi
 ├── pdf.js                ← Modul export PDF
 └── README.md
