@@ -11,8 +11,9 @@
 
 **Project-Matdis2** adalah pengembangan lanjutan dari versi sebelumnya (Matdis1).  
 Fokus pada versi ini adalah:  
-- peningkatan kemampuan logika,  
-- UI yang lebih modern,  
+- peningkatan kemampuan logika
+- UI yang lebih modern
+- Tema (Light/Dark) menyesuaikan sistem
 - fitur otomatis yang membantu pemula memahami teori.  
 
 Aplikasi ini dibuat untuk mendukung pembelajaran Matematika Diskrit secara interaktif, terutama bagi mahasiswa atau siswa yang baru mempelajari logika proposisi.
@@ -126,7 +127,8 @@ Project-Matdis2/
 - ✔ Tabel kebenaran otomatis  
 - ✔ Deteksi kalimat bahasa natural  
 - ✔ Export PDF  
-- ✔ UI modern (Tailwind CSS)  
+- ✔ UI modern (Tailwind CSS)
+- ✔ Tema Light/Dark (menyesuaikan pada sistem user)
 - ✔ Dukungan multi-proposisi  
 - ✔ Penjelasan teori otomatis  
 
