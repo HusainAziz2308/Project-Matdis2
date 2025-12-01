@@ -20,23 +20,20 @@ function normalizeText(s) {
 function extractClauses(text) {
   let t = normalizeText(text);
 
-  // 1) jika ada pola "jika X maka Y" atau "apabila X maka Y"
+  // 1) pola "jika X maka Y"
   for (let pre of kwIf) {
-    if (t.includes(pre) && (t.includes(" maka ") || t.includes(" maka, ") || t.includes(", maka "))) {
-      // contoh: "jika X maka Y" atau "jika X, maka Y"
+    if (t.includes(pre) && (t.includes(" maka ") || t.includes(", maka "))) {
       let afterIf = t.split(pre)[1];
-      // split at " maka "
       let parts = afterIf.split(/ maka |, maka | maka, /);
       if (parts.length >= 2) {
         let X = parts[0].trim();
-        // gabungkan sisa sebagai Y
         let Y = parts.slice(1).join(" maka ").trim();
         return [X, Y];
       }
     }
   }
 
-  // 1b) pola "Y terjadi jika X" -> balik
+  // 1b) pola "Y terjadi jika X"
   for (let p of kwIfReverse) {
     if (t.includes(p)) {
       let parts = t.split(p);
@@ -48,25 +45,19 @@ function extractClauses(text) {
     }
   }
 
-  // 2) pola "X dan Y" atau "X, Y dan Z" -> split by ' dan '
+  // 2) pola "X dan Y"
   for (let a of kwAnd) {
     if (t.includes(a)) {
-      // handle commas too
-      // split by ' dan ' first to get final conjunction groups, but keep commas as separators for more than 2
-      // we'll split on ' dan ' then split the left part by ',' as well
-      let rawParts = t.split(a).map(s=>s.trim());
-      // rawParts could be ["X", "Y"] or ["X, Y", "Z"] etc.
-      // create final clauses by splitting commas in each part
+      let rawParts = t.split(a).map(s => s.trim());
       let clauses = [];
       for (let rp of rawParts) {
-        rp.split(",").map(x=>x.trim()).forEach(x => { if (x) clauses.push(x); });
+        rp.split(",").map(x => x.trim()).forEach(x => { if (x) clauses.push(x); });
       }
-      // if too many clauses, limit to maxVars
       return clauses.slice(0, maxVars);
     }
   }
 
-  // 3) pola "X menyebabkan Y" atau "X menyebabkan bahwa Y"
+  // 3) pola "X menyebabkan Y"
   for (let p of kwCause) {
     if (t.includes(p)) {
       let parts = t.split(p);
@@ -78,12 +69,12 @@ function extractClauses(text) {
     }
   }
 
-  // 4) pola 'karena X maka Y' (because)
+  // 4) pola "karena X maka Y"
   for (let p of kwBecause) {
     if (t.includes(p) && t.includes(" maka ")) {
       let after = t.split(p)[1].trim();
       let parts = after.split(" maka ");
-      if (parts.length>=2) {
+      if (parts.length >= 2) {
         let X = parts[0].trim();
         let Y = parts.slice(1).join(" maka ").trim();
         return [X, Y];
@@ -91,13 +82,12 @@ function extractClauses(text) {
     }
   }
 
-  // fallback: coba split comma untuk >1 klausa
+  // fallback: coba split comma
   if (t.includes(",")) {
-    let cs = t.split(",").map(x=>x.trim()).filter(Boolean).slice(0, maxVars);
-    if (cs.length>1) return cs;
+    let cs = t.split(",").map(x => x.trim()).filter(Boolean).slice(0, maxVars);
+    if (cs.length > 1) return cs;
   }
 
-  // kalau tidak dikenali, return single clause
   return [t];
 }
 
@@ -106,473 +96,422 @@ function extractClauses(text) {
    =========================== */
 
 function boolToTF(b) { return b ? "T" : "F"; }
+function impl(p, q) { return (!p) || q; }
 
-// Evaluate implication p -> q
-function impl(p,q) { return (!p) || q; }
-
-// compute truth table for n vars, vars array like ['p','q'] and formula function that accepts object {p:true,...}
-function generateTruthTable(vars, formulaFns) {
-  // formulaFns: array of {name, compute: fn(varsObj)}
-  const n = vars.length;
-  const rows = [];
-  const total = Math.pow(2,n);
-  for (let i=0;i<total;i++) {
-    const row = {};
-    for (let j=0;j<n;j++) {
-      // assign bits; MSB = vars[0]
-      const bit = (i >> (n-1-j)) & 1;
-      row[vars[j]] = bit===1;
-    }
-    // compute each formula result
-    formulaFns.forEach(fn => {
-      row[fn.name] = fn.compute(row);
-    });
-    rows.push(row);
-  }
-  return rows;
-}
 
 /* ===========================
-   UI & App Logic
+   UI ELEMENTS
    =========================== */
 
 const inputEl = document.getElementById("inputText");
 const btnProcess = document.getElementById("btnProcess");
 const btnClear = document.getElementById("btnClear");
+
 const extractionArea = document.getElementById("extractionArea");
 const mappingControls = document.getElementById("mappingControls");
 const logicForms = document.getElementById("logicForms");
 const logicOutputs = document.getElementById("logicOutputs");
+
 const truthCard = document.getElementById("truthCard");
 const truthTableWrap = document.getElementById("truthTableWrap");
+
 const theoryCard = document.getElementById("theoryCard");
 const theoryText = document.getElementById("theoryText");
-const varCountBadge = document.getElementById("varCountBadge");
+
+const modeFormal = document.getElementById("modeFormal");
+
 const historyList = document.getElementById("historyList");
 const clearHistory = document.getElementById("clearHistory");
-const modeFormal = document.getElementById("modeFormal");
+
 const exportPdf = document.getElementById("exportPdf");
-const toggleTheme = document.getElementById("toggleTheme");
+
+const varCountBadge = document.getElementById("varCountBadge");
 
 let currentState = { clauses: [], mapping: null };
 
-// Theme toggle
-let dark = false;
-toggleTheme.addEventListener("click", ()=>{
-  dark = !dark;
-  if (dark) {
-    document.documentElement.style.background = "#0f172a";
-    document.body.classList.add("bg-slate-900","text-slate-100");
-    document.body.classList.remove("bg-slate-50","text-slate-800");
-    document.body.classList.add("bg-slate-900","text-slate-100","dark-mode");
-    document.body.classList.remove("bg-slate-900","text-slate-100","dark-mode");
-    toggleTheme.textContent = "Light";
-    toggleTheme.classList.remove("bg-slate-800");
-    toggleTheme.classList.add("bg-slate-200","text-slate-800");
-  } else {
-    document.documentElement.style.background = "";
-    document.body.classList.remove("bg-slate-900","text-slate-100");
-    document.body.classList.add("bg-slate-50","text-slate-800");
-    toggleTheme.textContent = "Dark";
-    toggleTheme.classList.remove("bg-slate-200","text-slate-800");
-    toggleTheme.classList.add("bg-slate-800");
-  }
-});
 
-// history
+/* ===========================
+   HISTORY SYSTEM
+   =========================== */
+
+function escapeHtml(s) {
+  return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 function loadHistory() {
   const data = JSON.parse(localStorage.getItem("logicpro_history") || "[]");
-  if (data.length===0) {
+  if (data.length === 0) {
     historyList.innerHTML = "<p class='text-slate-500'>Riwayat kosong.</p>";
     return;
   }
   historyList.innerHTML = "";
+
   data.slice().reverse().forEach((item, idx) => {
-    const el = document.createElement("div");
-    el.className = "flex items-center justify-between py-1";
-    el.innerHTML = `<div class="text-xs text-slate-700">${escapeHtml(item.input)}</div>
-      <div class="flex gap-2"><button class="reprocess text-blue-600 text-sm" data-i="${idx}">Proses</button></div>`;
-    historyList.appendChild(el);
+    const row = document.createElement("div");
+    row.className = "flex items-center justify-between py-1 text-xs";
+    row.innerHTML = `
+      <span>${escapeHtml(item.input)}</span>
+      <button class="reprocess text-blue-600" data-i="${idx}">Proses</button>
+    `;
+    historyList.appendChild(row);
   });
-  // attach reprocess
+
   document.querySelectorAll(".reprocess").forEach(btn => {
-    btn.addEventListener("click", (e)=>{
-      const idx = parseInt(e.target.getAttribute("data-i"));
+    btn.addEventListener("click", e => {
+      const i = parseInt(e.target.dataset.i);
       const data = JSON.parse(localStorage.getItem("logicpro_history") || "[]");
-      const item = data[idx];
-      if (item) {
-        inputEl.value = item.input;
-        doProcess();
-      }
+      inputEl.value = data[i].input;
+      doProcess();
     });
   });
 }
+
 function addHistory(input) {
   const arr = JSON.parse(localStorage.getItem("logicpro_history") || "[]");
-  arr.push({input, when: new Date().toISOString()});
-  // limit to 50
-  if (arr.length>50) arr.shift();
+  arr.push({ input, at: Date.now() });
+  if (arr.length > 50) arr.shift();
   localStorage.setItem("logicpro_history", JSON.stringify(arr));
   loadHistory();
 }
-clearHistory.addEventListener("click", ()=>{
+
+clearHistory.addEventListener("click", () => {
   localStorage.removeItem("logicpro_history");
   loadHistory();
 });
 
-/* Escape basic HTML for listing */
-function escapeHtml(s) { return s.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
 
-/* main processing */
+/* ===========================
+   MAIN PROCESS
+   =========================== */
+
 btnProcess.addEventListener("click", doProcess);
-btnClear.addEventListener("click", ()=>{
-  inputEl.value = ""; extractionArea.innerHTML = ""; mappingControls.innerHTML = ""; logicOutputs.innerHTML = "";
-  logicForms.classList.add("hidden"); truthCard.classList.add("hidden"); theoryCard.classList.add("hidden");
+btnClear.addEventListener("click", () => {
+  inputEl.value = "";
+  extractionArea.innerHTML = "";
+  mappingControls.innerHTML = "";
+  logicOutputs.innerHTML = "";
+  logicForms.classList.add("hidden");
+  truthCard.classList.add("hidden");
+  theoryCard.classList.add("hidden");
   varCountBadge.textContent = "0 proposisi";
 });
 
 function doProcess() {
   const raw = inputEl.value.trim();
-  if (!raw) {
-    alert("Masukkan kalimat dulu.");
-    return;
-  }
-  const clauses = extractClauses(raw); // array
+  if (!raw) return alert("Masukkan kalimat dulu.");
+
+  const clauses = extractClauses(raw);
   currentState.clauses = clauses;
   currentState.raw = raw;
-  // default mapping: vars = a,b,c -> p,q,r
+
   const vars = clauses.slice(0, maxVars);
   currentState.vars = vars;
 
-  // update extraction area
   renderExtraction(clauses);
-
-  // create mapping controls (user can reassign which clause is antecedent/consequent)
   renderMappingControls(vars);
-
-  // produce logic with current default mapping
   produceLogicFromMapping();
-
   addHistory(raw);
 }
+
+
+/* ===========================
+   EXTRACTION RENDER
+   =========================== */
 
 function renderExtraction(clauses) {
   extractionArea.innerHTML = "";
   varCountBadge.textContent = `${clauses.length} proposisi`;
-  const ul = document.createElement("div");
-  clauses.forEach((c,i) => {
-    const el = document.createElement("div");
-    el.className = "mb-2";
-    el.innerHTML = `<div class="keyword"><strong>${String.fromCharCode(112+i)}</strong> = ${escapeHtml(c)}</div>`;
-    ul.appendChild(el);
+
+  clauses.forEach((c, i) => {
+    const div = document.createElement("div");
+    div.innerHTML = `
+      <div class="keyword mb-2">
+        <strong>${String.fromCharCode(112 + i)}</strong> = ${escapeHtml(c)}
+      </div>`;
+    extractionArea.appendChild(div);
   });
-  extractionArea.appendChild(ul);
 }
+
+
+/* ===========================
+   MAPPING CONTROLS
+   =========================== */
 
 function renderMappingControls(vars) {
   mappingControls.innerHTML = "";
-  // If only 1 clause, show info and stop
-  if (vars.length===1) {
-    mappingControls.innerHTML = `<div class="text-sm text-slate-500">Hanya terdeteksi 1 proposisi. Untuk bentuk implikasi, aplikasi akan menganggap input sebagai proposisi tunggal. Kamu dapat menuliskan pola lain (mis. "Jika X maka Y" atau "X dan Y").</div>`;
+
+  if (vars.length === 1) {
+    mappingControls.innerHTML = `<p class="text-sm text-slate-500">
+      Hanya satu proposisi. Tambahkan pola seperti "Jika X maka Y".
+    </p>`;
     return;
   }
 
-  // For 2 or 3 vars, allow user to pick antecedent(s) and consequent
-  const label = document.createElement("div");
-  label.className = "text-sm text-slate-600 mb-2";
-  label.textContent = "Pilih mana yang menjadi Antecedent (sebab) dan Consequent (akibat). Untuk antecedent bisa dipilih 1 atau lebih (gabungan menggunakan ∧).";
-  mappingControls.appendChild(label);
+  const info = document.createElement("p");
+  info.className = "text-sm mb-2";
+  info.textContent = "Pilih antecedent (sebab) dan consequent (akibat).";
+  mappingControls.appendChild(info);
 
-  // create checkboxes for antecedent selection
+  // antecedent checkboxes
   const ancDiv = document.createElement("div");
-  ancDiv.className = "flex gap-2 items-center";
-  ancDiv.innerHTML = `<div class="text-sm font-medium">Antecedent:</div>`;
-  vars.forEach((v,i) => {
-    const id = `anc_${i}`;
-    const cb = document.createElement("label");
-    cb.className = "flex items-center gap-2 text-sm";
-    cb.innerHTML = `<input type="checkbox" id="${id}" data-i="${i}" ${i===0 ? "checked": ""}/> <span>${escapeHtml(v)}</span>`;
-    ancDiv.appendChild(cb);
+  ancDiv.className = "flex items-center gap-3 mb-2";
+  ancDiv.innerHTML = `<span class="text-sm font-medium">Antecedent:</span>`;
+  vars.forEach((v, i) => {
+    const label = document.createElement("label");
+    label.className = "text-sm flex items-center gap-1";
+    label.innerHTML = `<input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""}> ${escapeHtml(v)}`;
+    ancDiv.appendChild(label);
   });
   mappingControls.appendChild(ancDiv);
 
-  // Consequent select (single)
+  // consequent dropdown
   const consDiv = document.createElement("div");
-  consDiv.className = "flex gap-2 items-center mt-2";
-  consDiv.innerHTML = `<div class="text-sm font-medium">Consequent:</div>`;
+  consDiv.className = "flex items-center gap-3 mb-2";
+  consDiv.innerHTML = `<span class="text-sm font-medium">Consequent:</span>`;
   const sel = document.createElement("select");
   sel.id = "consSelect";
-  sel.className = "custom-select rounded border px-2";
-  vars.forEach((v,i) => {
-    const opt = document.createElement("option");
+  sel.className = "custom-select border rounded px-2 py-1";
+  vars.forEach((v, i) => {
+    let opt = document.createElement("option");
     opt.value = i;
     opt.textContent = v;
-    if (i===1) opt.selected = true;
+    if (i === 1) opt.selected = true;
     sel.appendChild(opt);
   });
   consDiv.appendChild(sel);
   mappingControls.appendChild(consDiv);
 
-  // Button apply mapping
-  const btnApply = document.createElement("button");
-  btnApply.className = "mt-3 px-3 py-1 bg-indigo-600 text-white rounded text-sm";
-  btnApply.textContent = "Terapkan Mapping";
-  btnApply.addEventListener("click", ()=>{
-    produceLogicFromMapping();
-  });
-  mappingControls.appendChild(btnApply);
+  const apply = document.createElement("button");
+  apply.textContent = "Terapkan Mapping";
+  apply.className = "px-3 py-1 bg-indigo-600 text-white rounded text-sm";
+  apply.addEventListener("click", () => produceLogicFromMapping());
+  mappingControls.appendChild(apply);
 }
 
-function produceLogicFromMapping() {
-  const vars = currentState.vars || [];
-  if (!vars || vars.length===0) return;
-  const n = vars.length;
-  // get antecedent indices
-  const ancBoxes = Array.from(mappingControls.querySelectorAll("input[type=checkbox]"));
-  const ancIdx = ancBoxes.filter(cb => cb.checked).map(cb=>parseInt(cb.getAttribute("data-i")));
-  // consequent
-  const consSel = document.getElementById("consSelect");
-  const consIdx = consSel ? parseInt(consSel.value) : (n>1?1:0);
 
-  // ensure consequent not part of antecedent only scenario; if so remove from antecedent
-  const finalAncIdx = ancIdx.filter(i => i!==consIdx);
-  // if antecedent empty (because user unchecked), default to first var
-  const finalAnc = finalAncIdx.length ? finalAncIdx.map(i=>vars[i]) : [vars[0]];
+/* ===========================
+   LOGIC GENERATION
+   =========================== */
+
+function produceLogicFromMapping() {
+  const vars = currentState.vars;
+  if (!vars || vars.length === 0) return;
+
+  const ancIdx = Array.from(mappingControls.querySelectorAll("input[type=checkbox]"))
+    .filter(c => c.checked)
+    .map(c => parseInt(c.dataset.i));
+
+  const consIdx = parseInt(document.getElementById("consSelect").value);
+
+  const finalAncIdx = ancIdx.filter(i => i !== consIdx);
+  const finalAnc = finalAncIdx.length ? finalAncIdx.map(i => vars[i]) : [vars[0]];
   const consequent = vars[consIdx];
 
-  // build symbolic names p,q,r
-  const symNames = ["p","q","r"];
-  const mapping = {};
-  for (let i=0;i<vars.length;i++) mapping[symNames[i]] = vars[i];
-  currentState.mapping = { mapping, antecedentIdx: finalAncIdx, consequentIdx: consIdx, antecedent: finalAnc, consequent };
+  const symNames = ["p", "q", "r"];
+  let mapping = {};
+  vars.forEach((v, i) => mapping[symNames[i]] = v);
 
-  // render mapping summary
-  const mapHtml = `
-    <div class="text-sm text-slate-700">
-      <p><strong>Antecedent (sebab):</strong> ${finalAnc.map(x=>escapeHtml(x)).join(" ∧ ")}</p>
-      <p><strong>Consequent (akibat):</strong> ${escapeHtml(consequent)}</p>
-    </div>
-  `;
-  // append to extraction area (replace last)
-  extractionArea.innerHTML += mapHtml;
+  currentState.mapping = {
+    mapping,
+    antecedent: finalAnc,
+    consequent
+  };
 
-  // generate logic outputs
   renderLogicOutputs(finalAnc, consequent);
-  // generate truth table (only up to 3)
-  generateAndRenderTruth(finalAnc, consequent, mapping);
-  // show theory
+  generateTruthTableRender(finalAnc, consequent);
   renderTheory();
 }
 
-function renderLogicOutputs(antecedentArr, consequent) {
-  logicOutputs.innerHTML = "";
+
+/* ===========================
+   LOGIC OUTPUT RENDER
+   =========================== */
+
+function renderLogicOutputs(ancArr, cons) {
   logicForms.classList.remove("hidden");
+  logicOutputs.innerHTML = "";
+
   const modeF = modeFormal.checked;
 
-  // build symbol forms: antecedent may be p or (p ∧ q)
-  // map antecedentArr to p,q,... names
-  let symMap = {};
-  currentState.vars.forEach((v,i)=> symMap[v] = String.fromCharCode(112+i)); // p,q,r
-  const antecedentSym = antecedentArr.map(a=> symMap[a]).join(" ∧ ");
-  const consequentSym = symMap[consequent] || "q";
+  const symMap = {};
+  currentState.vars.forEach((v, i) => symMap[v] = String.fromCharCode(112 + i));
 
-  // forms:
-  const implSym = `${antecedentSym} → ${consequentSym}`;
-  const negSym = `¬(${antecedentSym} → ${consequentSym})`;
-  const convSym = `${consequentSym} → ${antecedentSym}`;
-  const invSym = `¬(${antecedentSym}) → ¬(${consequentSym})`;
-  const contraSym = `¬(${consequentSym}) → ¬(${antecedentSym})`;
+  const ancSym = ancArr.map(a => symMap[a]).join(" ∧ ");
+  const consSym = symMap[cons];
 
-  // natural language versions
-  const ancNat = antecedentArr.join(" dan ");
-  const consNat = consequent;
-  const implNat = `Jika ${ancNat}, maka ${consNat}.`;
-  const negNat = `${ancNat} dan tidak ${consNat}.`;
-  const convNat = `Jika ${consNat}, maka ${ancNat}.`;
-  const invNat = `Jika tidak ${ancNat}, maka tidak ${consNat}.`;
-  const contraNat = `Jika tidak ${consNat}, maka tidak ${ancNat}.`;
+  const implSym = `${ancSym} → ${consSym}`;
+  const negSym = `¬(${ancSym} → ${consSym})`;
+  const convSym = `${consSym} → ${ancSym}`;
+  const invSym = `¬(${ancSym}) → ¬(${consSym})`;
+  const contraSym = `¬(${consSym}) → ¬(${ancSym})`;
 
-  // produce HTML
+  const ancNat = ancArr.join(" dan ");
+  const consNat = cons;
+
   const items = [
-    { title:"Implikasi (p → q)", sym:implSym, nat:implNat },
-    { title:"Negasi", sym:negSym, nat:negNat },
-    { title:"Konvers", sym:convSym, nat:convNat },
-    { title:"Invers", sym:invSym, nat:invNat },
-    { title:"Kontraposisi", sym:contraSym, nat:contraNat }
+    ["Implikasi", implSym, `Jika ${ancNat}, maka ${consNat}.`],
+    ["Negasi", negSym, `${ancNat} dan tidak ${consNat}.`],
+    ["Konvers", convSym, `Jika ${consNat}, maka ${ancNat}.`],
+    ["Invers", invSym, `Jika tidak ${ancNat}, maka tidak ${consNat}.`],
+    ["Kontraposisi", contraSym, `Jika tidak ${consNat}, maka tidak ${ancNat}.`]
   ];
 
-  items.forEach(it => {
+  items.forEach(([title, sym, nat]) => {
     const div = document.createElement("div");
-    div.className = "p-2 rounded border mb-2";
-    div.innerHTML = `<div class="text-sm font-medium">${it.title}</div>
-      <div class="text-xs mt-1 text-slate-600">${modeF ? `<span class='font-mono'>${escapeHtml(it.sym)}</span>` : escapeHtml(it.nat)}</div>
-      <div class="text-xs mt-1 text-slate-500">(${modeF ? escapeHtml(it.nat) : `<span class='font-mono'>${escapeHtml(it.sym)}</span>`})</div>`;
+    div.className = "border p-2 rounded mb-2 text-sm";
+    div.innerHTML = `
+      <div class="font-medium">${title}</div>
+      <div class="text-xs mt-1 text-slate-400">${modeF ? sym : escapeHtml(nat)}</div>
+      <div class="text-xs mt-1 text-slate-400">(${modeF ? escapeHtml(nat) : sym})</div>
+    `;
     logicOutputs.appendChild(div);
   });
-
-  // show theory card
-  theoryCard.classList.remove("hidden");
 }
 
-function generateAndRenderTruth(antecedentArr, consequent, mapping) {
-  // determine variables used: union antecedent vars + consequent (limit to 3)
-  let varsList = Array.from(new Set([].concat(antecedentArr, [consequent]))).slice(0, maxVars);
-  // create formulafns: p, q, ¬p etc
-  // name mapping: use p,q,r in order of varsList
-  const symNames = ["p","q","r"];
-  const varToSym = {};
-  varsList.forEach((v,i)=> varToSym[v] = symNames[i]);
 
-  // produce compute fns
-  const fns = [];
+/* ===========================
+   TRUTH TABLE
+   =========================== */
 
-  // single variable booleans for table
-  varsList.forEach((v,i) => {
-    fns.push({ name: varToSym[v], compute: (row)=> row[varToSym[v]] });
-  });
+function generateTruthTableRender(ancArr, cons) {
+  const varsList = Array.from(new Set([...ancArr, cons]));
+  const symNames = ["p", "q", "r"];
+  const symMap = {};
+  varsList.forEach((v, i) => symMap[v] = symNames[i]);
 
-  // We will compute: Impl (antecedent -> consequent), ¬(impl), conv, inv, contra
-  // Build compute functions using sym positions
-  // compute antecedent bool: if antecedentArr has multiple -> AND of them; else single
-  const antecedentFn = (row) => {
-    return antecedentArr.reduce((acc,a)=>{
-      const sym = varToSym[a];
-      const val = sym ? row[sym] : false;
-      return acc && val;
-    }, true);
-  };
-  const consequentFn = (row) => {
-    const sym = varToSym[consequent];
-    return sym ? row[sym] : false;
-  };
-
-  fns.push({ name: "impl", compute: (row) => impl(antecedentFn(row), consequentFn(row)) });
-  fns.push({ name: "not_impl", compute: (row) => !impl(antecedentFn(row), consequentFn(row)) });
-  fns.push({ name: "conv", compute: (row) => impl(consequentFn(row), antecedentFn(row)) }); // q->p
-  fns.push({ name: "inv", compute: (row) => impl(!antecedentFn(row), !consequentFn(row)) }); // ¬p->¬q
-  fns.push({ name: "contra", compute: (row) => impl(!consequentFn(row), !antecedentFn(row)) }); // ¬q->¬p
-
-  // But we need rows to have p,q,r values keys; create mapping of row keys accordingly in generateTruthTable
-  // We'll generate rows with keys symNames used
-  const usedSyms = varsList.map(v=>varToSym[v]);
-  // create a wrapper generate that maps index to usedSyms
   const rows = [];
-  const total = Math.pow(2, usedSyms.length);
-  for (let i=0;i<total;i++) {
+  const n = varsList.length;
+  const total = 2 ** n;
+
+  function val(row, prop) { return row[symMap[prop]]; }
+
+  for (let i = 0; i < total; i++) {
     const row = {};
-    for (let j=0;j<usedSyms.length;j++) {
-      const bit = (i >> (usedSyms.length-1-j)) & 1;
-      row[usedSyms[j]] = bit===1;
-    }
-    // compute each fn into row
-    fns.forEach(fn => {
-      row[fn.name] = fn.compute(row);
+
+    varsList.forEach((v, j) => {
+      const bit = (i >> (n - 1 - j)) & 1;
+      row[symMap[v]] = bit === 1;
     });
+
+    const A = ancArr.every(a => val(row, a));
+    const C = val(row, cons);
+
+    row["impl"] = impl(A, C);
+    row["not_impl"] = !row.impl;
+    row["conv"] = impl(C, A);
+    row["inv"] = impl(!A, !C);
+    row["contra"] = impl(!C, !A);
+
     rows.push(row);
   }
 
-  // render table HTML
-  let html = `<div class="text-xs text-slate-600 mb-2">Variabel: ${varsList.map(v=>`<span class="badge">${varToSym[v]} = ${escapeHtml(v)}</span>`).join(" ")}</div>`;
-  html += `<table class="w-full text-xs border-collapse"><thead><tr>`;
-  // columns: usedSyms, then impl, not_impl, conv, inv, contra
-  usedSyms.forEach(s => html += `<th class="border px-2 py-1">${s}</th>`);
-  ["p→q","¬(p→q)","q→p","¬p→¬q","¬q→¬p"].forEach(h => html += `<th class="border px-2 py-1">${h}</th>`);
-  html += `</tr></thead><tbody>`;
+  let html = `<div class="text-xs mb-2">Variabel: ${
+    varsList.map(v => `<span class="badge">${symMap[v]} = ${escapeHtml(v)}</span>`).join(" ")
+  }</div>`;
+
+  html += `<table class="w-full text-xs border-collapse">
+    <thead><tr>
+      ${varsList.map(v => `<th class="border px-2 py-1">${symMap[v]}</th>`).join("")}
+      <th class="border px-2 py-1">p→q</th>
+      <th class="border px-2 py-1">¬(p→q)</th>
+      <th class="border px-2 py-1">q→p</th>
+      <th class="border px-2 py-1">¬p→¬q</th>
+      <th class="border px-2 py-1">¬q→¬p</th>
+    </tr></thead><tbody>`;
+
   rows.forEach(r => {
-    html += `<tr>`;
-    usedSyms.forEach(s => html += `<td class="border px-2 py-1 text-center">${boolToTF(r[s])}</td>`);
-    html += `<td class="border px-2 py-1 text-center">${boolToTF(r["impl"])}</td>`;
-    html += `<td class="border px-2 py-1 text-center">${boolToTF(r["not_impl"])}</td>`;
-    html += `<td class="border px-2 py-1 text-center">${boolToTF(r["conv"])}</td>`;
-    html += `<td class="border px-2 py-1 text-center">${boolToTF(r["inv"])}</td>`;
-    html += `<td class="border px-2 py-1 text-center">${boolToTF(r["contra"])}</td>`;
-    html += `</tr>`;
+    html += `<tr>
+      ${varsList.map(v => `<td class="border px-2 py-1 text-center">${boolToTF(r[symMap[v]])}</td>`).join("")}
+      <td class="border text-center">${boolToTF(r.impl)}</td>
+      <td class="border text-center">${boolToTF(r.not_impl)}</td>
+      <td class="border text-center">${boolToTF(r.conv)}</td>
+      <td class="border text-center">${boolToTF(r.inv)}</td>
+      <td class="border text-center">${boolToTF(r.contra)}</td>
+    </tr>`;
   });
-  html += `</tbody></table>`;
+
+  html += "</tbody></table>";
+
   truthTableWrap.innerHTML = html;
   truthCard.classList.remove("hidden");
 }
 
-/* theory */
+
+/* ===========================
+   THEORY CARD
+   =========================== */
+
 function renderTheory() {
-  const txt = `
+  theoryText.innerHTML = `
     <p><strong>Negasi</strong> dari (p → q) adalah ¬(p → q), yang ekuivalen dengan p ∧ ¬q.</p>
-    <p><strong>Konvers</strong> (converse) adalah q → p — tidak selalu ekuivalen dengan p → q.</p>
-    <p><strong>Invers</strong> adalah ¬p → ¬q — juga tidak selalu ekuivalen dengan p → q.</p>
-    <p><strong>Kontraposisi</strong> adalah ¬q → ¬p — <em>selalu</em> ekuivalen dengan p → q.</p>
-    <p class="mt-2 text-sm text-slate-500">(Penjelasan otomatis ini disesuaikan dengan mapping antecedent/ consequent yang dipilih.)</p>
+    <p><strong>Konvers</strong> adalah q → p.</p>
+    <p><strong>Invers</strong> adalah ¬p → ¬q.</p>
+    <p><strong>Kontraposisi</strong> adalah ¬q → ¬p dan selalu ekuivalen dengan p → q.</p>
   `;
-  theoryText.innerHTML = txt;
   theoryCard.classList.remove("hidden");
 }
 
-/* initial load */
-loadHistory();
 
-/* Export to PDF using jsPDF */
-exportPdf.addEventListener("click", async ()=>{
-  if (!currentState.raw) { alert("Proses dulu input sebelum export."); return; }
+/* ===========================
+   EXPORT PDF
+   =========================== */
+
+exportPdf.addEventListener("click", () => {
+  if (!currentState.raw) return alert("Proses dulu input sebelum export.");
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
+
   let y = 40;
+
   doc.setFontSize(14);
-  doc.text("LogicPro Natural — Hasil Proses", 40, y);
+  doc.text("LogicPro Natural — Hasil Proses", 40, y); 
   y += 20;
+
   doc.setFontSize(11);
-  doc.text(`Input: ${currentState.raw}`, 40, y);
-  y += 18;
+  doc.text("Input: " + currentState.raw, 40, y);
+  y += 20;
 
-  // mapping summary (if any)
   if (currentState.mapping) {
-    const anc = currentState.mapping.antecedent.join(" ∧ ");
-    const cons = currentState.mapping.consequent;
-    doc.text(`Antecedent: ${anc}`, 40, y); y+=14;
-    doc.text(`Consequent: ${cons}`, 40, y); y+=14;
-  }
-  y += 6;
+    const A = currentState.mapping.antecedent.join(" ∧ ");
+    const C = currentState.mapping.consequent;
 
-  // logic outputs
-  const logicHtmlEl = logicOutputs;
-  // gather text from logicOutputs
-  doc.setFontSize(12);
-  Array.from(logicHtmlEl.querySelectorAll("div.p-2")).forEach(div => {
+    doc.text("Antecedent: " + A, 40, y);
+    y += 14;
+    doc.text("Consequent: " + C, 40, y);
+    y += 20;
+  }
+
+  Array.from(logicOutputs.children).forEach(div => {
     const title = div.querySelector(".font-medium")?.textContent || "";
-    const sym = div.querySelector(".text-xs")?.textContent || "";
-    if (y>750) { doc.addPage(); y=40; }
+    const text = div.querySelector(".text-xs")?.textContent || "";
+
     doc.setFontSize(11);
-    doc.text(title, 40, y); y += 14;
-    doc.setFontSize(10);
-    // wrap long text
-    const lines = doc.splitTextToSize(sym, 500);
-    doc.text(lines, 40, y); y += lines.length*12 + 6;
+    doc.text(title, 40, y);
+    y += 14;
+
+    const lines = doc.splitTextToSize(text, 500);
+    doc.text(lines, 40, y);
+    y += lines.length * 12 + 10;
+
+    if (y > 720) {
+      doc.addPage();
+      y = 40;
+    }
   });
 
-  // add truth table as plain text (small)
-  if (!truthCard.classList.contains("hidden")) {
-    if (y>600) { doc.addPage(); y=40; }
-    doc.setFontSize(11);
-    doc.text("Tabel Kebenaran:", 40, y); y+=14;
-    // convert table to text lines
-    const table = truthTableWrap.querySelector("table");
-    if (table) {
-      const rows = table.querySelectorAll("tr");
-      rows.forEach((tr, i) => {
-        const cells = Array.from(tr.querySelectorAll("th,td")).map(td => td.textContent.trim());
-        const line = cells.join(" | ");
-        if (y>750) { doc.addPage(); y=40; }
-        doc.setFontSize(8);
-        doc.text(line, 40, y); y += 10;
-      });
-    }
-  }
-
-  // save
-  doc.save("logicpro_result.pdf");
+  doc.save("logicpro.pdf");
 });
 
-/* small helper: click Enter in textarea triggers process with Ctrl+Enter alt? */
-inputEl.addEventListener("keydown", (e)=>{
-  if (e.key === "Enter" && e.ctrlKey) {
-    doProcess();
-  }
+
+/* ===========================
+   ADD CTRL+ENTER
+   =========================== */
+
+inputEl.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === "Enter") doProcess();
 });
+
+
+/* === INITIAL LOAD === */
+loadHistory();
