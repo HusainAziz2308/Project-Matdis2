@@ -164,6 +164,8 @@ toggleTheme.addEventListener("click", ()=>{
     document.documentElement.style.background = "#0f172a";
     document.body.classList.add("bg-slate-900","text-slate-100");
     document.body.classList.remove("bg-slate-50","text-slate-800");
+    document.body.classList.add("bg-slate-900","text-slate-100","dark-mode");
+    document.body.classList.remove("bg-slate-900","text-slate-100","dark-mode");
     toggleTheme.textContent = "Light";
     toggleTheme.classList.remove("bg-slate-800");
     toggleTheme.classList.add("bg-slate-200","text-slate-800");
@@ -300,7 +302,7 @@ function renderMappingControls(vars) {
   consDiv.innerHTML = `<div class="text-sm font-medium">Consequent:</div>`;
   const sel = document.createElement("select");
   sel.id = "consSelect";
-  sel.className = "rounded border px-2";
+  sel.className = "custom-select rounded border px-2";
   vars.forEach((v,i) => {
     const opt = document.createElement("option");
     opt.value = i;
